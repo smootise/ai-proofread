@@ -1,0 +1,16 @@
+fastapi>=0.115.0
+uvicorn[standard]>=0.34.0
+# pydantic 2.11.x is the last stable release supporting Python 3.11-3.13.
+# On Python 3.14 you need a pre-release: pip install "pydantic>=2.14.0a1" --pre
+# See README for setup instructions.
+pydantic>=2.11.5
+python-dotenv>=1.0.0
+requests>=2.32.0
+
+# Testing
+pytest>=8.0.0
+pytest-mock>=3.14.0
+
+# Code quality
+black>=25.0.0
+ruff>=0.11.0
