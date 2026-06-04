@@ -113,14 +113,17 @@ PasteRestoreDelayMs := 150
     StringReplace, SourceApp,   SourceApp,   `",, All
     StringReplace, ActiveTitle, ActiveTitle, `",, All
 
-    ; --- Step 7b: Run Python client and capture its exit code ---
+    ; --- Step 7b: Run Python client ---
     ; The captured text is never on the command line — it travels via TempIn.
+    ; Success is detected by the presence of the output file, not the exit code.
+    ; RunWait exit code capture via cmd /c is unreliable in AHK v1.1 (returns
+    ; the cmd.exe PID instead of the child process exit code on some Windows versions).
     CmdLine = %PythonExe% "%ClientScript%" --input-file "%TempIn%" --output-file "%TempOut%" --source-app "%SourceApp%" --window-title "%ActiveTitle%" --mode %CaptureMode%
 
-    RunWait, %ComSpec% /c %CmdLine%, , Hide, ExitCode
+    RunWait, %ComSpec% /c %CmdLine%, , Hide
 
     ; --- Step 8: On success, paste the corrected text ---
-    if (ExitCode = 0 and FileExist(TempOut))
+    if (FileExist(TempOut))
     {
         ; Read the output file as UTF-8 (*P65001 = code page 65001 = UTF-8)
         FileRead, CorrectedText, *P65001 %TempOut%

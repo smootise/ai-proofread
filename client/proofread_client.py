@@ -7,50 +7,52 @@ Protocol (temp-file based, robust to Unicode / multiline / special characters):
     Exit:   0 = success, 1 = any failure
 
 AutoHotkey checks the exit code.  On exit 0 it reads the output file and pastes
-its contents.  On non-zero exit it restores the previous clipboard — no paste.
+its contents.  On non-zero exit it restores the previous clipboard -- no paste.
 
 Usage (called by AutoHotkey):
-    python client/proofread_client.py \
-        --input-file  "C:\path\to\proofread_in_<pid>.txt" \
-        --output-file "C:\path\to\proofread_out_<pid>.txt" \
-        [--source-app "Slack"] \
-        [--window-title "Slack | #general"] \
+    python client/proofread_client.py
+        --input-file  "C:\\path\\to\\proofread_in_<pid>.txt"
+        --output-file "C:\\path\\to\\proofread_out_<pid>.txt"
+        [--source-app "Slack"]
+        [--window-title "Slack | #general"]
         [--mode selected_text|whole_field|unknown]
 """
 
 import argparse
 import logging
+import os
 import sys
 from pathlib import Path
 
 import requests
 from dotenv import load_dotenv
 
-load_dotenv()
-
-from server.config import settings  # noqa: E402 — after load_dotenv
+# Load .env from the repo root (two levels up from this file: client/ -> repo root)
+_repo_root = Path(__file__).resolve().parent.parent
+load_dotenv(_repo_root / ".env")
 
 logging.basicConfig(
     level=logging.INFO,
-    format="%(asctime)s %(levelname)-8s %(name)s — %(message)s",
-    stream=sys.stderr,  # All diagnostic output goes to stderr; stdout is reserved
+    format="%(asctime)s %(levelname)-8s %(name)s - %(message)s",
+    stream=sys.stderr,
 )
 logger = logging.getLogger(__name__)
 
 
+def _get_settings() -> dict:
+    return {
+        "api_url": os.getenv("PROOFREADER_API_URL", "http://localhost:8000"),
+        "timeout": int(os.getenv("REQUEST_TIMEOUT_SECONDS", "30")),
+    }
+
+
 def _parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Proofreader client bridge")
-    parser.add_argument(
-        "--input-file", required=True, help="Path to UTF-8 file containing captured text."
-    )
-    parser.add_argument(
-        "--output-file", required=True, help="Path where corrected_text will be written (UTF-8)."
-    )
+    parser.add_argument("--input-file", required=True, help="Path to UTF-8 file containing captured text.")
+    parser.add_argument("--output-file", required=True, help="Path where corrected_text will be written (UTF-8).")
     parser.add_argument("--source-app", default="unknown", help="Source application name.")
     parser.add_argument("--window-title", default="", help="Active window title.")
-    parser.add_argument(
-        "--mode", default="unknown", choices=["selected_text", "whole_field", "unknown"]
-    )
+    parser.add_argument("--mode", default="unknown", choices=["selected_text", "whole_field", "unknown"])
     return parser.parse_args()
 
 
@@ -60,6 +62,7 @@ def main() -> int:
     On failure, nothing is written to the output file.
     """
     args = _parse_args()
+    cfg = _get_settings()
     input_path = Path(args.input_file)
     output_path = Path(args.output_file)
 
@@ -83,26 +86,20 @@ def main() -> int:
     }
 
     # -- Call backend --
-    url = f"{settings.proofreader_api_url.rstrip('/')}/proofread"
-    logger.info(
-        "POST %s (source_app=%r mode=%r text_len=%d)", url, args.source_app, args.mode, len(text)
-    )
+    url = f"{cfg['api_url'].rstrip('/')}/proofread"
+    logger.info("POST %s (source_app=%r mode=%r text_len=%d)", url, args.source_app, args.mode, len(text))
 
     try:
-        response = requests.post(url, json=payload, timeout=settings.request_timeout_seconds)
+        response = requests.post(url, json=payload, timeout=cfg["timeout"])
         response.raise_for_status()
     except requests.exceptions.ConnectionError:
-        logger.error(
-            "Cannot connect to backend at %s. Is the server running?", settings.proofreader_api_url
-        )
+        logger.error("Cannot connect to backend at %s. Is the server running?", cfg["api_url"])
         return 1
     except requests.exceptions.Timeout:
-        logger.error("Backend request timed out after %ds.", settings.request_timeout_seconds)
+        logger.error("Backend request timed out after %ds.", cfg["timeout"])
         return 1
     except requests.exceptions.HTTPError as exc:
-        logger.error(
-            "Backend returned HTTP %d: %s", exc.response.status_code, exc.response.text[:200]
-        )
+        logger.error("Backend returned HTTP %d: %s", exc.response.status_code, exc.response.text[:200])
         return 1
 
     # -- Extract corrected_text --
