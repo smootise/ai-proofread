@@ -2,22 +2,36 @@
 FastAPI application entrypoint.
 
 Endpoints:
-    GET  /health     — liveness check
-    POST /proofread  — proofread submitted text via Ollama and log to SQLite
+    GET  /health              — liveness check
+    POST /proofread           — proofread submitted text via Ollama and log to SQLite
+
+    GET  /ui                  — V2 web UI: dashboard with summary stats
+    GET  /ui/history          — V2 web UI: correction history list
+    GET  /ui/history/{id}     — V2 web UI: correction detail
+    GET  /ui/history/{id}/delete  — V2 web UI: delete confirmation
+    POST /ui/history/{id}/delete  — V2 web UI: perform cascade delete
 
 Run with:
-    uvicorn server.main:app --reload
+    uvicorn server.main:app --host 127.0.0.1 --reload
+
+IMPORTANT: Bind to 127.0.0.1 (localhost only). The web UI displays stored private text and
+has no authentication. Do not expose to a LAN/TrueNAS address without adding auth first.
 """
 
 import logging
+from pathlib import Path
+from urllib.parse import urlencode
 
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import JSONResponse
+from fastapi.staticfiles import StaticFiles
+from fastapi.templating import Jinja2Templates
 
 from server.config import settings
 from server.correction_service import CorrectionError, proofread
 from server.database import init_db
 from server.models import ProofreadRequest, ProofreadResponse
+from server import web as web_module
 
 logging.basicConfig(
     level=logging.INFO,
@@ -25,7 +39,35 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-app = FastAPI(title="Proofreader", version="1.0.0")
+app = FastAPI(title="Proofreader", version="2.0.0")
+
+# ---------------------------------------------------------------------------
+# Jinja2 templates + static files (V2 web UI)
+# ---------------------------------------------------------------------------
+
+_SERVER_DIR = Path(__file__).parent
+_templates = Jinja2Templates(directory=str(_SERVER_DIR / "templates"))
+
+
+def _build_qs_filter(filters: dict, **overrides) -> str:
+    """
+    Jinja2 filter: merge a filters dict with keyword overrides and return a
+    URL query string (without the leading '?').
+
+    Usage in template: {{ filters | build_qs(page=page+1) }}
+    """
+    merged = {k: v for k, v in filters.items() if v}
+    merged.update({k: v for k, v in overrides.items() if v is not None})
+    return urlencode(merged)
+
+
+_templates.env.filters["build_qs"] = _build_qs_filter
+
+app.mount("/static", StaticFiles(directory=str(_SERVER_DIR / "static")), name="static")
+
+# Inject the shared templates instance into the web router module, then register it.
+web_module.set_templates(_templates)
+app.include_router(web_module.router)
 
 
 # ---------------------------------------------------------------------------

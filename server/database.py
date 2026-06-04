@@ -5,6 +5,8 @@ Owns:
 - Schema creation (idempotent, safe to call on every startup).
 - Inserting correction_events rows (success and failure).
 - Inserting correction_items rows linked to an event.
+- Reading and querying correction_events / correction_items (V2 web UI).
+- Deleting correction events (cascade to items) (V2 web UI).
 
 Tables match the schema in docs/backend_api.md.
 Uses only the standard-library sqlite3 module (no ORM).
@@ -69,12 +71,25 @@ def _get_connection(db_path: Path) -> sqlite3.Connection:
     return conn
 
 
+_CREATE_INDEXES = [
+    # correction_events indexes — support list ordering and filtering
+    "CREATE INDEX IF NOT EXISTS idx_events_created_at ON correction_events(created_at)",
+    "CREATE INDEX IF NOT EXISTS idx_events_source_app ON correction_events(source_app)",
+    "CREATE INDEX IF NOT EXISTS idx_events_language   ON correction_events(language)",
+    # correction_items indexes — support joins, cascade-delete queries, and category filtering
+    "CREATE INDEX IF NOT EXISTS idx_items_event_id  ON correction_items(event_id)",
+    "CREATE INDEX IF NOT EXISTS idx_items_category  ON correction_items(category)",
+]
+
+
 def init_db(db_path: Path) -> None:
-    """Create tables if they do not already exist. Safe to call on every startup."""
+    """Create tables and indexes if they do not already exist. Safe to call on every startup."""
     logger.info("Initialising database at %s", db_path)
     with _get_connection(db_path) as conn:
         conn.execute(_CREATE_CORRECTION_EVENTS)
         conn.execute(_CREATE_CORRECTION_ITEMS)
+        for idx_sql in _CREATE_INDEXES:
+            conn.execute(idx_sql)
         conn.commit()
     logger.info("Database ready.")
 
@@ -185,3 +200,211 @@ def insert_items(db_path: Path, event_id: int, items: list[CorrectionItemRow]) -
         conn.executemany(sql, rows)
         conn.commit()
     logger.debug("Inserted %d correction_item(s) for event_id=%d", len(items), event_id)
+
+
+# ---------------------------------------------------------------------------
+# Read helpers (V2 web UI)
+# ---------------------------------------------------------------------------
+
+
+def list_events(
+    db_path: Path,
+    *,
+    changed: Optional[bool] = None,
+    language: Optional[str] = None,
+    category: Optional[str] = None,
+    source_app: Optional[str] = None,
+    q: Optional[str] = None,
+    limit: int = 50,
+    offset: int = 0,
+) -> list[sqlite3.Row]:
+    """
+    Return correction_events rows matching the given filters, newest first.
+
+    Filters:
+    - changed: True → only changed events; False → only unchanged; None → all.
+    - language: exact match on the language column.
+    - category: event must have at least one correction_item with this category.
+    - source_app: exact match on the source_app column.
+    - q: LIKE filter over original_text OR corrected_text (case-insensitive, wrapped in %).
+    - limit/offset: pagination.
+
+    Each returned row includes an extra `item_count` column (number of linked items).
+    """
+    conditions: list[str] = []
+    params: list = []
+
+    if changed is not None:
+        conditions.append("e.changed = ?")
+        params.append(1 if changed else 0)
+    if language is not None:
+        conditions.append("e.language = ?")
+        params.append(language)
+    if source_app is not None:
+        conditions.append("e.source_app = ?")
+        params.append(source_app)
+    if q:
+        conditions.append("(e.original_text LIKE ? OR e.corrected_text LIKE ?)")
+        like = f"%{q}%"
+        params.extend([like, like])
+    if category is not None:
+        conditions.append(
+            "EXISTS (SELECT 1 FROM correction_items ci WHERE ci.event_id = e.id AND ci.category = ?)"
+        )
+        params.append(category)
+
+    where = f"WHERE {' AND '.join(conditions)}" if conditions else ""
+    sql = f"""
+        SELECT e.*,
+               (SELECT COUNT(*) FROM correction_items ci WHERE ci.event_id = e.id) AS item_count
+          FROM correction_events e
+         {where}
+         ORDER BY e.created_at DESC, e.id DESC
+         LIMIT ? OFFSET ?
+    """
+    params.extend([limit, offset])
+
+    with _get_connection(db_path) as conn:
+        rows = conn.execute(sql, params).fetchall()
+    return rows
+
+
+def count_events(
+    db_path: Path,
+    *,
+    changed: Optional[bool] = None,
+    language: Optional[str] = None,
+    category: Optional[str] = None,
+    source_app: Optional[str] = None,
+    q: Optional[str] = None,
+) -> int:
+    """Return the total count of correction_events matching the given filters (for pagination)."""
+    conditions: list[str] = []
+    params: list = []
+
+    if changed is not None:
+        conditions.append("e.changed = ?")
+        params.append(1 if changed else 0)
+    if language is not None:
+        conditions.append("e.language = ?")
+        params.append(language)
+    if source_app is not None:
+        conditions.append("e.source_app = ?")
+        params.append(source_app)
+    if q:
+        conditions.append("(e.original_text LIKE ? OR e.corrected_text LIKE ?)")
+        like = f"%{q}%"
+        params.extend([like, like])
+    if category is not None:
+        conditions.append(
+            "EXISTS (SELECT 1 FROM correction_items ci WHERE ci.event_id = e.id AND ci.category = ?)"
+        )
+        params.append(category)
+
+    where = f"WHERE {' AND '.join(conditions)}" if conditions else ""
+    sql = f"SELECT COUNT(*) FROM correction_events e {where}"
+
+    with _get_connection(db_path) as conn:
+        result = conn.execute(sql, params).fetchone()
+    return result[0]
+
+
+def get_event(db_path: Path, event_id: int) -> Optional[sqlite3.Row]:
+    """Return a single correction_events row by id, or None if not found."""
+    sql = """
+        SELECT e.*,
+               (SELECT COUNT(*) FROM correction_items ci WHERE ci.event_id = e.id) AS item_count
+          FROM correction_events e
+         WHERE e.id = ?
+    """
+    with _get_connection(db_path) as conn:
+        return conn.execute(sql, (event_id,)).fetchone()
+
+
+def get_items_for_event(db_path: Path, event_id: int) -> list[sqlite3.Row]:
+    """Return all correction_items rows for the given event_id."""
+    sql = """
+        SELECT * FROM correction_items
+         WHERE event_id = ?
+         ORDER BY id ASC
+    """
+    with _get_connection(db_path) as conn:
+        return conn.execute(sql, (event_id,)).fetchall()
+
+
+def get_stats(db_path: Path) -> dict:
+    """
+    Return aggregate statistics for the dashboard.
+
+    Keys:
+    - total: total correction events.
+    - changed: events where changed = 1.
+    - unchanged: events where changed = 0.
+    - errors: events where error IS NOT NULL.
+    - top_categories: list of (category, count) tuples, top 5.
+    - top_source_apps: list of (source_app, count) tuples, top 5.
+    """
+    with _get_connection(db_path) as conn:
+        total = conn.execute("SELECT COUNT(*) FROM correction_events").fetchone()[0]
+        changed_count = conn.execute(
+            "SELECT COUNT(*) FROM correction_events WHERE changed = 1"
+        ).fetchone()[0]
+        unchanged_count = conn.execute(
+            "SELECT COUNT(*) FROM correction_events WHERE changed = 0"
+        ).fetchone()[0]
+        error_count = conn.execute(
+            "SELECT COUNT(*) FROM correction_events WHERE error IS NOT NULL"
+        ).fetchone()[0]
+        top_categories = conn.execute(
+            """
+            SELECT category, COUNT(*) AS cnt
+              FROM correction_items
+             WHERE category != ''
+             GROUP BY category
+             ORDER BY cnt DESC
+             LIMIT 5
+            """
+        ).fetchall()
+        top_source_apps = conn.execute(
+            """
+            SELECT source_app, COUNT(*) AS cnt
+              FROM correction_events
+             GROUP BY source_app
+             ORDER BY cnt DESC
+             LIMIT 5
+            """
+        ).fetchall()
+
+    return {
+        "total": total,
+        "changed": changed_count,
+        "unchanged": unchanged_count,
+        "errors": error_count,
+        "top_categories": [(r["category"], r["cnt"]) for r in top_categories],
+        "top_source_apps": [(r["source_app"], r["cnt"]) for r in top_source_apps],
+    }
+
+
+# ---------------------------------------------------------------------------
+# Delete helpers (V2 web UI)
+# ---------------------------------------------------------------------------
+
+
+def delete_event(db_path: Path, event_id: int) -> bool:
+    """
+    Delete a correction_event and all its correction_items in a single transaction.
+
+    Returns True if the event was found and deleted, False if no row matched.
+    Single-event delete only — does not accept a list of ids.
+    """
+    with _get_connection(db_path) as conn:
+        conn.execute("DELETE FROM correction_items WHERE event_id = ?", (event_id,))
+        cursor = conn.execute("DELETE FROM correction_events WHERE id = ?", (event_id,))
+        conn.commit()
+        deleted = cursor.rowcount > 0
+
+    if deleted:
+        logger.info("Deleted correction_event id=%d (cascade to items)", event_id)
+    else:
+        logger.warning("delete_event: no correction_event found with id=%d", event_id)
+    return deleted

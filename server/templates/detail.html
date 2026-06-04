@@ -1,0 +1,95 @@
+{% extends "base.html" %}
+{% block title %}Event #{{ event.id }} — Proofreader{% endblock %}
+
+{% block content %}
+<div class="detail-header">
+  <a class="btn btn-secondary" href="/ui/history">← Back to history</a>
+  <h1>Correction Event #{{ event.id }}</h1>
+  <a class="btn btn-danger"
+     href="/ui/history/{{ event.id }}/delete"
+     onclick="return confirm('Delete event #{{ event.id }}? This cannot be undone.')">
+    Delete
+  </a>
+</div>
+
+<section class="metadata-section">
+  <h2>Metadata</h2>
+  <table class="metadata-table">
+    <tbody>
+      <tr><th>Date</th><td>{{ event.created_at[:19] | replace("T", " ") }} UTC</td></tr>
+      <tr><th>Source app</th><td>{{ event.source_app or "—" }}</td></tr>
+      <tr><th>Window title</th><td>{{ event.window_title or "—" }}</td></tr>
+      <tr><th>Capture mode</th><td>{{ event.mode or "—" }}</td></tr>
+      <tr><th>Language</th><td>{{ event.language or "—" }}</td></tr>
+      <tr>
+        <th>Status</th>
+        <td>
+          {% if event.error %}
+            <span class="badge badge-error">error</span>
+          {% elif event.changed is none %}
+            <span class="badge badge-neutral">—</span>
+          {% elif event.changed %}
+            <span class="badge badge-changed">changed</span>
+          {% else %}
+            <span class="badge badge-unchanged">unchanged</span>
+          {% endif %}
+        </td>
+      </tr>
+      <tr><th>Confidence</th><td>
+        {% if event.confidence is not none %}{{ "%.0f"|format(event.confidence * 100) }}%{% else %}—{% endif %}
+      </td></tr>
+      <tr><th>Model</th><td>{{ event.model_name or "—" }}</td></tr>
+      <tr><th>Latency</th><td>
+        {% if event.latency_ms is not none %}{{ event.latency_ms }} ms{% else %}—{% endif %}
+      </td></tr>
+      {% if event.error %}
+      <tr><th>Error</th><td class="error-cell">{{ event.error }}</td></tr>
+      {% endif %}
+    </tbody>
+  </table>
+</section>
+
+<section class="diff-section">
+  <h2>Before / After</h2>
+  {% if event.diff_html %}
+  <div class="diff-block">{{ event.diff_html }}</div>
+  {% else %}
+  <p class="text-muted">Full text not stored for this event.</p>
+  {% endif %}
+</section>
+
+<section class="items-section">
+  <h2>Correction fragments ({{ event.fragments | length }})</h2>
+  {% if event.fragments %}
+  <table class="items-table">
+    <thead>
+      <tr>
+        <th>Original</th>
+        <th>Corrected</th>
+        <th>Category</th>
+        <th>Explanation</th>
+        <th>Status</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for item in event.fragments %}
+      <tr>
+        <td><del class="item-del">{{ item.original_text }}</del></td>
+        <td><ins class="item-ins">{{ item.corrected_text }}</ins></td>
+        <td>
+          {% if item.category %}
+            <span class="badge badge-category">{{ item.category }}</span>
+          {% else %}—{% endif %}
+        </td>
+        <td>{{ item.explanation or "—" }}</td>
+        <td><span class="badge badge-status">{{ item.accepted_status }}</span></td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <p class="text-muted">No correction fragments recorded for this event.</p>
+  {% endif %}
+</section>
+
+{% endblock %}

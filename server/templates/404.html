@@ -1,0 +1,10 @@
+{% extends "base.html" %}
+{% block title %}Not Found — Proofreader{% endblock %}
+
+{% block content %}
+<div class="error-page">
+  <h1>Not Found</h1>
+  <p>{{ message or "The page or resource you requested does not exist." }}</p>
+  <a class="btn" href="/ui/history">← Back to history</a>
+</div>
+{% endblock %}

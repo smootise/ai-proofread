@@ -21,6 +21,42 @@ FastAPI backend
   -> parses JSON
   -> logs to SQLite
   -> returns structured response
+
+V2 additions (web UI)
+
+The FastAPI backend now also serves a local web UI:
+
+FastAPI backend (V2)
+  -> GET /health, POST /proofread  (unchanged V1 API)
+  -> GET /ui, GET /ui/history, GET /ui/history/{id}
+  -> GET/POST /ui/history/{id}/delete
+     -> history_service.py  (query/stats/delete orchestration)
+     -> database.py         (read/delete helpers added alongside V1 inserts)
+     -> diffing.py          (stdlib difflib, server-side before/after diff)
+     -> server/templates/   (Jinja2, autoescaped)
+     -> server/static/      (style.css, app.js — no build step)
+
+Module boundaries:
+
+server/main.py            FastAPI app: API routes + web router registration + Jinja2/static setup
+server/web.py             APIRouter(prefix="/ui"): UI route handlers
+server/history_service.py Thin orchestration for UI: list/detail/stats/delete
+server/database.py        All DB access: schema, inserts (V1), reads/deletes (V2 additions)
+server/diffing.py         Before/after word-level diff → MarkupSafe HTML
+server/correction_service.py  Proofread pipeline (unchanged)
+server/ollama_client.py   Ollama HTTP client (unchanged)
+server/models.py          Pydantic request/response models (unchanged)
+server/config.py          Settings singleton (unchanged)
+
+Security note:
+
+The web UI displays full stored private text and has no authentication.
+Always bind to 127.0.0.1 (localhost only):
+
+  uvicorn server.main:app --host 127.0.0.1
+
+If you move the backend to a LAN or TrueNAS address, add authentication before exposing /ui.
+
 Future TrueNAS architecture
 Windows machine:
 - AutoHotkey
@@ -28,15 +64,14 @@ Windows machine:
 - Clipboard/input manipulation
 
 TrueNAS server:
-- FastAPI backend
+- FastAPI backend (including web UI)
 - Ollama
 - SQLite database
-- Future web UI
 - Future analytics/ML jobs
 
 The client must use configurable PROOFREADER_API_URL.
 
-Suggested project structure
+Project structure
 proofreader/
   CLAUDE.md
   README.md
@@ -56,6 +91,19 @@ proofreader/
     models.py
     ollama_client.py
     correction_service.py
+    history_service.py      (V2)
+    diffing.py              (V2)
+    web.py                  (V2)
+    templates/              (V2 Jinja2 templates)
+      base.html
+      dashboard.html
+      history.html
+      detail.html
+      confirm_delete.html
+      404.html
+    static/                 (V2 static assets)
+      style.css
+      app.js
 
   data/
     .gitkeep
@@ -70,17 +118,23 @@ proofreader/
   tests/
     test_correction_parsing.py
     test_database.py
+    test_config.py
+    test_history_queries.py  (V2)
+    test_diffing.py          (V2)
+    test_web_routes.py       (V2)
+
 Dependency guidance
 
-Prefer simple dependencies for V1:
+V1 + V2 dependencies:
 
 fastapi
 uvicorn
 pydantic
 python-dotenv
-requests or httpx
+requests
+jinja2 (V2 templating; markupsafe ships with it)
 pytest
 black
-ruff or flake8
+ruff
 
-Do not introduce frontend frameworks, task queues, vector databases, or ML dependencies in V1.
+Do not introduce frontend frameworks, task queues, vector databases, or ML dependencies in V2.

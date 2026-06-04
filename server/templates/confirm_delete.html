@@ -1,0 +1,34 @@
+{% extends "base.html" %}
+{% block title %}Delete Event #{{ event.id }} — Proofreader{% endblock %}
+
+{% block content %}
+<div class="confirm-delete">
+  <h1>Delete Correction Event #{{ event.id }}?</h1>
+
+  <div class="confirm-detail">
+    <p>
+      This will permanently delete event <strong>#{{ event.id }}</strong>
+      and its <strong>{{ event.item_count }} correction fragment{{ 's' if event.item_count != 1 else '' }}</strong>.
+    </p>
+    <p>This action cannot be undone.</p>
+
+    <table class="metadata-table">
+      <tbody>
+        <tr><th>Date</th><td>{{ event.created_at[:19] | replace("T", " ") }} UTC</td></tr>
+        <tr><th>Source app</th><td>{{ event.source_app or "—" }}</td></tr>
+        <tr><th>Language</th><td>{{ event.language or "—" }}</td></tr>
+        <tr><th>Status</th><td>
+          {% if event.changed %}changed{% elif event.changed is not none %}unchanged{% else %}—{% endif %}
+        </td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="confirm-actions">
+    <form method="post" action="/ui/history/{{ event.id }}/delete">
+      <button type="submit" class="btn btn-danger">Yes, delete permanently</button>
+    </form>
+    <a class="btn btn-secondary" href="/ui/history/{{ event.id }}">Cancel</a>
+  </div>
+</div>
+{% endblock %}

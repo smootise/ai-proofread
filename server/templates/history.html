@@ -1,0 +1,115 @@
+{% extends "base.html" %}
+{% block title %}History — Proofreader{% endblock %}
+
+{% block content %}
+<h1>Correction History</h1>
+
+{% if deleted_id %}
+<div class="alert alert-success">
+  Event #{{ deleted_id }} was deleted.
+</div>
+{% endif %}
+
+{# Filter form — plain GET, no JavaScript required #}
+<form class="filter-form" method="get" action="/ui/history">
+  <div class="filter-row">
+    <label for="changed">Status</label>
+    <select id="changed" name="changed">
+      <option value="" {% if filters.changed == "" %}selected{% endif %}>All</option>
+      <option value="changed" {% if filters.changed == "changed" %}selected{% endif %}>Changed only</option>
+      <option value="unchanged" {% if filters.changed == "unchanged" %}selected{% endif %}>Unchanged only</option>
+    </select>
+
+    <label for="source_app">Source app</label>
+    <input id="source_app" name="source_app" type="text" value="{{ filters.source_app }}" placeholder="e.g. Slack">
+
+    <label for="language">Language</label>
+    <input id="language" name="language" type="text" value="{{ filters.language }}" placeholder="e.g. en">
+
+    <label for="category">Category</label>
+    <input id="category" name="category" type="text" value="{{ filters.category }}" placeholder="e.g. spelling">
+
+    <label for="q">Search text</label>
+    <input id="q" name="q" type="text" value="{{ filters.q }}" placeholder="Search in text…">
+
+    <button type="submit" class="btn">Filter</button>
+    <a class="btn btn-secondary" href="/ui/history">Clear</a>
+  </div>
+</form>
+
+{% if events %}
+<p class="result-count">
+  {{ total }} event{{ 's' if total != 1 else '' }} found
+  — page {{ page }} of {{ total_pages }}
+</p>
+
+<table class="history-table">
+  <thead>
+    <tr>
+      <th>#</th>
+      <th>When</th>
+      <th>App</th>
+      <th>Language</th>
+      <th>Status</th>
+      <th>Mode</th>
+      <th>Preview</th>
+      <th>Items</th>
+      <th></th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for event in events %}
+    <tr>
+      <td>{{ event.id }}</td>
+      <td>
+        <a href="/ui/history/{{ event.id }}">
+          {{ event.created_at[:19] | replace("T", " ") }}
+        </a>
+      </td>
+      <td>{{ event.source_app or "—" }}</td>
+      <td>{{ event.language or "—" }}</td>
+      <td>
+        {% if event.error %}
+          <span class="badge badge-error">error</span>
+        {% elif event.changed is none %}
+          <span class="badge badge-neutral">—</span>
+        {% elif event.changed %}
+          <span class="badge badge-changed">changed</span>
+        {% else %}
+          <span class="badge badge-unchanged">unchanged</span>
+        {% endif %}
+      </td>
+      <td>{{ event.mode or "—" }}</td>
+      <td class="preview-cell">{{ event.original_preview or "—" }}</td>
+      <td>{{ event.item_count }}</td>
+      <td>
+        <a href="/ui/history/{{ event.id }}/delete"
+           class="btn btn-danger btn-sm"
+           onclick="return confirm('Delete event #{{ event.id }}? This cannot be undone.')">
+          Delete
+        </a>
+      </td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+
+{# Pagination #}
+<nav class="pagination">
+  {% if page > 1 %}
+  <a class="btn btn-secondary" href="/ui/history?{{ filters | build_qs(page=page-1) }}">← Prev</a>
+  {% endif %}
+  <span class="pagination-info">Page {{ page }} / {{ total_pages }}</span>
+  {% if page < total_pages %}
+  <a class="btn btn-secondary" href="/ui/history?{{ filters | build_qs(page=page+1) }}">Next →</a>
+  {% endif %}
+</nav>
+
+{% else %}
+<div class="empty-state">
+  <p>No corrections match these filters.</p>
+  <a href="/ui/history">Clear all filters</a>
+</div>
+{% endif %}
+
+{% endblock %}

@@ -1,8 +1,10 @@
-# AI Proofreader (V1)
+# AI Proofreader (V2)
 
 Local-first Windows proofreading tool. Press **Ctrl+Alt+P** anywhere to fix spelling and grammar without leaving your app.
 
 Selected text is corrected in place. If nothing is selected, the whole input field is corrected. The original text is left on your clipboard as a recovery fallback.
+
+A local web UI lets you browse correction history, view before/after diffs, and delete stored events.
 
 ---
 
@@ -16,6 +18,14 @@ AutoHotkey (Ctrl+Alt+P)
   → Ollama (gemma4:e4b)
   → SQLite log
   → pastes corrected text
+```
+
+The web UI is served by the same backend:
+
+```
+Browser → GET /ui, /ui/history, /ui/history/{id}
+  → FastAPI backend (Jinja2 templates)
+  → SQLite (read-only for the UI, delete supported)
 ```
 
 The client and server are separate: the backend can later move to a TrueNAS server by changing one env var (`PROOFREADER_API_URL`).
@@ -53,7 +63,7 @@ pip install -r requirements.txt
 **Python 3.14 (pydantic pre-release required):**
 ```bat
 pip install "pydantic>=2.14.0a1" --pre
-pip install fastapi uvicorn python-dotenv requests pytest pytest-mock black ruff
+pip install fastapi uvicorn python-dotenv requests jinja2 httpx2 pytest pytest-mock black ruff
 ```
 
 ### 3. Pull the Ollama model
@@ -66,10 +76,10 @@ The model name must match `OLLAMA_MODEL` in your `.env`. Change `OLLAMA_MODEL` i
 
 ### 4. Start the backend
 
-From the repo root:
+From the repo root, bind to localhost only (the web UI displays stored private text):
 
 ```bat
-uvicorn server.main:app --reload
+uvicorn server.main:app --host 127.0.0.1 --reload
 ```
 
 Verify it's running:
@@ -80,7 +90,13 @@ curl http://localhost:8000/health
 
 Expected: `{"status":"ok"}`
 
-### 5. Load the AutoHotkey script
+> **Privacy note:** The web UI is served on localhost with no authentication. It displays the full text of everything you have proofread. Do not change `--host 127.0.0.1` to `0.0.0.0` or a LAN address without adding authentication first.
+
+### 5. Open the web UI
+
+Visit **http://127.0.0.1:8000/ui** in your browser to view correction history.
+
+### 6. Load the AutoHotkey script
 
 Double-click `ahk\proofreader_hotkey.ahk` (requires AutoHotkey v1.1 installed).
 
@@ -92,11 +108,22 @@ If your Python interpreter is not on `PATH`, edit the `PythonExe` variable at th
 
 ## Usage
 
+### Hotkey (V1 — unchanged)
+
 1. Select text in any app (or place your cursor in a text field).
 2. Press **Ctrl+Alt+P**.
 3. Wait ~2–5 seconds for the correction.
 4. The corrected text replaces your selection (or the whole field).
 5. The **original text** is left on your clipboard — paste it back with **Ctrl+V** to undo.
+
+### Web UI (V2)
+
+| Page | URL | What you can do |
+|---|---|---|
+| Dashboard | `/ui` | Stats overview: total events, changed/unchanged, top categories and source apps |
+| History | `/ui/history` | Browse all corrections; filter by status, language, category, source app, or free text; paginate |
+| Detail | `/ui/history/{id}` | Full metadata, before/after word diff, per-fragment breakdown |
+| Delete | `/ui/history/{id}/delete` | Confirm and permanently delete an event (removes all linked fragments) |
 
 ---
 
@@ -115,7 +142,7 @@ All variables have defaults in `.env.example`. Copy to `.env` to override.
 | `REQUEST_TIMEOUT_SECONDS` | `30` | HTTP timeout for Ollama calls. |
 | `CLIPBOARD_TIMEOUT_SECONDS` | `0.5` | How long AHK waits for clipboard after Ctrl+C. |
 | `PASTE_RESTORE_DELAY_MS` | `150` | Delay after paste before restoring clipboard. |
-| `STORE_FULL_TEXT` | `true` | Store full original/corrected text in SQLite. |
+| `STORE_FULL_TEXT` | `true` | Store full original/corrected text in SQLite. Set to `false` to store metadata only (the diff and detail pages will show "Full text not stored"). |
 
 ---
 
@@ -129,9 +156,7 @@ python -m pytest tests/ -v
 
 ## Manual test matrix
 
-Run these after setup to verify V1 works end-to-end.
-
-### Success cases
+### V1 hotkey — success cases
 
 | App | Test | Expected |
 |---|---|---|
@@ -142,7 +167,7 @@ Run these after setup to verify V1 works end-to-end.
 | Discord | Same as Slack | Draft corrected; **no message sent** |
 | WhatsApp Desktop | Same as Slack | Draft corrected; **no message sent** |
 
-### Failure cases
+### V1 hotkey — failure cases
 
 | Scenario | Expected |
 |---|---|
@@ -152,13 +177,19 @@ Run these after setup to verify V1 works end-to-end.
 | Text over 5000 chars | Nothing pasted; clipboard restored |
 | Ollama returns garbage | Nothing pasted; clipboard restored |
 
-### Clipboard behavior
+### V2 web UI — manual checks
 
-| Scenario | Expected |
+| Check | Expected |
 |---|---|
-| Pre-existing clipboard content; correction fails | Original clipboard content restored exactly |
-| Successful correction | Corrected text pasted; **original captured text** now on clipboard |
-| Selection equals current clipboard content | Still detected and corrected (uses clear+copy, not comparison) |
+| Visit `/ui` with no history | "No corrections logged yet" message |
+| Visit `/ui` after corrections | Stats show correct counts; top categories/apps populated |
+| `/ui/history` — filter by "changed only" | Only events with `changed=true` shown |
+| `/ui/history?q=hello` | Only events whose text contains "hello" |
+| Detail page for changed event | Before/after diff shows strikethrough deletions (red) and insertions (green) |
+| Detail page for error event | Metadata shows error message; diff shows "Full text not stored" or placeholder |
+| Delete via confirm page (no JS) | GET confirm → POST → redirect → deleted-id notice on history list |
+| Delete via inline button | JS confirm() dialog → POST → same redirect |
+| Unknown event id | 404 page (no stack trace) |
 
 ---
 
@@ -167,22 +198,38 @@ Run these after setup to verify V1 works end-to-end.
 ```
 ai-proofread/
   ahk/
-    proofreader_hotkey.ahk   AutoHotkey v1.1 hotkey (Windows-only)
+    proofreader_hotkey.ahk    AutoHotkey v1.1 hotkey (Windows-only)
   client/
-    proofread_client.py      Python bridge: temp file → HTTP → temp file
+    proofread_client.py       Python bridge: temp file → HTTP → temp file
   server/
-    main.py                  FastAPI app (GET /health, POST /proofread)
-    config.py                Settings loaded from .env
-    models.py                Pydantic request/response models
-    database.py              SQLite schema + inserts
-    ollama_client.py         Ollama HTTP client + JSON extraction
-    correction_service.py    Orchestration: validate → correct → persist → respond
+    main.py                   FastAPI app (API + web UI wiring)
+    config.py                 Settings loaded from .env
+    models.py                 Pydantic request/response models
+    database.py               SQLite schema, inserts (V1), reads/deletes (V2)
+    ollama_client.py          Ollama HTTP client + JSON extraction
+    correction_service.py     Proofread pipeline orchestration
+    history_service.py        V2: read/stats/delete orchestration for the UI
+    diffing.py                V2: difflib-based before/after diff → MarkupSafe HTML
+    web.py                    V2: APIRouter(/ui) — all UI route handlers
+    templates/                V2: Jinja2 templates (autoescaped)
+      base.html
+      dashboard.html
+      history.html
+      detail.html
+      confirm_delete.html
+      404.html
+    static/                   V2: static assets (no build step)
+      style.css
+      app.js
   data/
-    .gitkeep                 SQLite DB created here at runtime
+    .gitkeep                  SQLite DB created here at runtime
   tests/
     test_correction_parsing.py
-    test_database.py
     test_config.py
+    test_database.py
+    test_history_queries.py   V2: DB read/delete query tests
+    test_diffing.py           V2: diff escaping and line-break tests
+    test_web_routes.py        V2: UI route tests + V1 regression
   docs/
     v1_scope.md
     architecture.md
@@ -196,13 +243,13 @@ ai-proofread/
 
 ---
 
-## What V1 does NOT include
+## What V2 does NOT include
 
-- Web UI or correction history dashboard
-- Per-correction accept/reject
-- ML, clustering, or analytics
+- Per-correction accept/reject (column exists in DB; UI deferred to V2.5)
+- ML, clustering, progress tracking, or preference learning (V3)
+- Review-before-apply popup (deferred)
 - macOS support
 - Rich-text preservation
 - Cloud model APIs
 
-See `docs/roadmap.md` for the V2/V3 plan.
+See `docs/roadmap.md` for the V2.5/V3 plan.

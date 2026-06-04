@@ -1,0 +1,92 @@
+{% extends "base.html" %}
+{% block title %}Dashboard — Proofreader{% endblock %}
+
+{% block content %}
+<h1>Dashboard</h1>
+
+{% if stats._db_error is defined and stats._db_error %}
+  <div class="alert alert-error">
+    Could not load statistics — the database may be unavailable. Check the server log.
+  </div>
+{% elif stats.total == 0 %}
+  <div class="empty-state">
+    <p>No corrections logged yet.</p>
+    <p>Press <kbd>Ctrl+Alt+P</kbd> anywhere to proofread some text.</p>
+  </div>
+{% else %}
+
+  <section class="stats-grid">
+    <div class="stat-card">
+      <div class="stat-value">{{ stats.total }}</div>
+      <div class="stat-label">Total events</div>
+    </div>
+    <div class="stat-card stat-card--changed">
+      <div class="stat-value">{{ stats.changed }}</div>
+      <div class="stat-label">
+        <a href="/ui/history?changed=changed">Changed</a>
+      </div>
+    </div>
+    <div class="stat-card stat-card--unchanged">
+      <div class="stat-value">{{ stats.unchanged }}</div>
+      <div class="stat-label">
+        <a href="/ui/history?changed=unchanged">Unchanged</a>
+      </div>
+    </div>
+    <div class="stat-card stat-card--error">
+      <div class="stat-value">{{ stats.errors }}</div>
+      <div class="stat-label">Errors</div>
+    </div>
+  </section>
+
+  <div class="dashboard-columns">
+
+    {% if stats.top_categories %}
+    <section class="dashboard-panel">
+      <h2>Top correction categories</h2>
+      <table class="stats-table">
+        <thead>
+          <tr><th>Category</th><th>Count</th></tr>
+        </thead>
+        <tbody>
+          {% for cat, cnt in stats.top_categories %}
+          <tr>
+            <td>
+              <a href="/ui/history?category={{ cat | urlencode }}">{{ cat }}</a>
+            </td>
+            <td>{{ cnt }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </section>
+    {% endif %}
+
+    {% if stats.top_source_apps %}
+    <section class="dashboard-panel">
+      <h2>Top source apps</h2>
+      <table class="stats-table">
+        <thead>
+          <tr><th>App</th><th>Count</th></tr>
+        </thead>
+        <tbody>
+          {% for app, cnt in stats.top_source_apps %}
+          <tr>
+            <td>
+              <a href="/ui/history?source_app={{ app | urlencode }}">{{ app }}</a>
+            </td>
+            <td>{{ cnt }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </section>
+    {% endif %}
+
+  </div>
+
+  <div class="dashboard-actions">
+    <a class="btn" href="/ui/history">Browse all corrections</a>
+  </div>
+
+{% endif %}
+{% endblock %}
