@@ -36,17 +36,46 @@ FastAPI backend (V2)
      -> server/templates/   (Jinja2, autoescaped)
      -> server/static/      (style.css, app.js — no build step)
 
+V2.5 additions (review-before-apply workflow)
+
+A second hotkey opens a pywebview popup for the user to review a proposed correction:
+
+AutoHotkey Ctrl+Alt+Shift+P (new)
+  -> captures text (same clipboard flow as V1)
+  -> stores source window handle for re-focus
+  -> client/review_client.py (new)
+     -> POST /proofread (review=True) → event_id + corrected_text
+     -> pywebview window loads GET /ui/review/{event_id}
+     -> user clicks Accept / Copy / Reject
+     -> JS API bridge calls decide(decision, correctedText)
+     -> writes JSON decision file: {"decision": "...", "corrected_text": "..."}
+     -> closes window; exits
+  -> AHK reads decision file, branches:
+     accept → WinActivate + Ctrl+V; leave corrected text in clipboard
+     copy   → leave corrected text in clipboard; no paste
+     reject/cancel → restore previous clipboard; no paste
+
+FastAPI backend (V2.5 additions — V1/V2 unchanged)
+  -> GET /ui/review/{event_id}     Review popup page (HTML, pywebview)
+  -> POST /ui/review/{event_id}/decision  Record user's decision → update review_status
+     -> history_service.set_review_status
+     -> database.update_review_status
+  -> POST /proofread now also accepts optional review=True, returns event_id
+  -> correction_events table gains review_status column (idempotent migration in init_db)
+
 Module boundaries:
 
 server/main.py            FastAPI app: API routes + web router registration + Jinja2/static setup
-server/web.py             APIRouter(prefix="/ui"): UI route handlers
-server/history_service.py Thin orchestration for UI: list/detail/stats/delete
-server/database.py        All DB access: schema, inserts (V1), reads/deletes (V2 additions)
-server/diffing.py         Before/after word-level diff → MarkupSafe HTML
-server/correction_service.py  Proofread pipeline (unchanged)
+server/web.py             APIRouter(prefix="/ui"): UI route handlers (V2 + V2.5 review routes)
+server/history_service.py Thin orchestration for UI: list/detail/stats/delete + set_review_status
+server/database.py        All DB access: schema, inserts (V1), reads/deletes (V2), update_review_status (V2.5)
+server/diffing.py         Before/after word-level diff → MarkupSafe HTML (unchanged)
+server/correction_service.py  Proofread pipeline (event_id returned in response, review_status threaded)
 server/ollama_client.py   Ollama HTTP client (unchanged)
-server/models.py          Pydantic request/response models (unchanged)
+server/models.py          Pydantic models (ProofreadResponse.event_id, ReviewStatus, ReviewDecisionRequest added)
 server/config.py          Settings singleton (unchanged)
+
+client/review_client.py   V2.5 review client: pywebview bridge, JS API, decision file I/O
 
 Security note:
 
@@ -122,6 +151,7 @@ proofreader/
     test_history_queries.py  (V2)
     test_diffing.py          (V2)
     test_web_routes.py       (V2)
+    test_review_routes.py    (V2.5)
 
 Dependency guidance
 
@@ -137,4 +167,10 @@ pytest
 black
 ruff
 
-Do not introduce frontend frameworks, task queues, vector databases, or ML dependencies in V2.
+V2.5 additional dependency:
+
+pywebview — wraps the Windows WebView2 (Edge) runtime for the review popup.
+Requires the Microsoft Edge WebView2 Runtime to be installed on the machine:
+https://developer.microsoft.com/en-us/microsoft-edge/webview2/
+
+Do not introduce frontend frameworks, task queues, vector databases, or ML dependencies.

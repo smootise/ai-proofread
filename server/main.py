@@ -11,6 +11,9 @@ Endpoints:
     GET  /ui/history/{id}/delete  — V2 web UI: delete confirmation
     POST /ui/history/{id}/delete  — V2 web UI: perform cascade delete
 
+    GET  /ui/review/{id}           — V2.5 review popup page (loaded by pywebview)
+    POST /ui/review/{id}/decision  — V2.5 record the user's review popup decision
+
 Run with:
     uvicorn server.main:app --host 127.0.0.1 --reload
 

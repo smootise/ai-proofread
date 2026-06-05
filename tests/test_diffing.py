@@ -14,7 +14,6 @@ from markupsafe import Markup
 
 from server.diffing import build_diff
 
-
 # ---------------------------------------------------------------------------
 # Safety — stored HTML/script text must be escaped
 # ---------------------------------------------------------------------------
@@ -26,7 +25,11 @@ def test_xss_in_original_is_escaped() -> None:
     # Even if no changes: the text must not appear as live tags.
     result = build_diff(original, corrected)
     assert "<script>" not in str(result)
-    assert "&lt;script&gt;" in str(result) or "no changes" in str(result).lower() or "not stored" in str(result).lower()
+    assert (
+        "&lt;script&gt;" in str(result)
+        or "no changes" in str(result).lower()
+        or "not stored" in str(result).lower()
+    )
 
 
 def test_html_in_original_is_escaped() -> None:

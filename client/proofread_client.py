@@ -50,11 +50,17 @@ def _get_settings() -> dict:
 
 def _parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Proofreader client bridge")
-    parser.add_argument("--input-file", required=True, help="Path to UTF-8 file containing captured text.")
-    parser.add_argument("--output-file", required=True, help="Path where corrected_text will be written (UTF-8).")
+    parser.add_argument(
+        "--input-file", required=True, help="Path to UTF-8 file containing captured text."
+    )
+    parser.add_argument(
+        "--output-file", required=True, help="Path where corrected_text will be written (UTF-8)."
+    )
     parser.add_argument("--source-app", default="unknown", help="Source application name.")
     parser.add_argument("--window-title", default="", help="Active window title.")
-    parser.add_argument("--mode", default="unknown", choices=["selected_text", "whole_field", "unknown"])
+    parser.add_argument(
+        "--mode", default="unknown", choices=["selected_text", "whole_field", "unknown"]
+    )
     return parser.parse_args()
 
 
@@ -89,7 +95,9 @@ def main() -> int:
 
     # -- Call backend --
     url = f"{cfg['api_url'].rstrip('/')}/proofread"
-    logger.info("POST %s (source_app=%r mode=%r text_len=%d)", url, args.source_app, args.mode, len(text))
+    logger.info(
+        "POST %s (source_app=%r mode=%r text_len=%d)", url, args.source_app, args.mode, len(text)
+    )
 
     try:
         response = requests.post(url, json=payload, timeout=cfg["timeout"])
@@ -101,7 +109,9 @@ def main() -> int:
         logger.error("Backend request timed out after %ds.", cfg["timeout"])
         return 1
     except requests.exceptions.HTTPError as exc:
-        logger.error("Backend returned HTTP %d: %s", exc.response.status_code, exc.response.text[:200])
+        logger.error(
+            "Backend returned HTTP %d: %s", exc.response.status_code, exc.response.text[:200]
+        )
         return 1
 
     # -- Extract corrected_text --

@@ -18,6 +18,7 @@ from server.database import (
     get_items_for_event,
     get_stats,
     list_events,
+    update_review_status,
 )
 from server.diffing import build_diff
 
@@ -186,6 +187,22 @@ def remove_event(event_id: int) -> bool:
         return delete_event(settings.db_path, event_id)
     except Exception as exc:
         logger.error("Failed to delete event %d: %s", event_id, exc)
+        return False
+
+
+def set_review_status(event_id: int, review_status: str) -> bool:
+    """
+    Update the review_status of a single correction event.
+
+    Returns True if updated, False if not found.
+    Called by the review popup decision endpoint.
+    """
+    try:
+        return update_review_status(settings.db_path, event_id, review_status)
+    except Exception as exc:
+        logger.error(
+            "Failed to set review_status=%r for event %d: %s", review_status, event_id, exc
+        )
         return False
 
 

@@ -26,17 +26,30 @@ Single-event delete with two-step confirmation (cascade to items)
 Localhost-only, no auth — all UI under /ui prefix
 Server-rendered Jinja2 templates, minimal plain CSS, tiny vanilla JS (confirm only)
 No schema migration — V1 data is preserved as-is
-V2.5
+V2.5 ✅ Complete
 
-Personalization and feedback loop.
+Review-before-apply workflow.
 
-Potential features:
+Included:
 
-Per-correction accept/reject (accepted_status column already exists in correction_items)
-Track rejected suggestions
-Avoid repeatedly suggesting corrections the user often rejects
-Store correction preference patterns
-Start distinguishing "mistake" from "intentional style"
+Second hotkey Ctrl+Alt+Shift+P for the review path
+Same safe clipboard capture as the fast path (Ctrl+Alt+P is unchanged)
+pywebview popup loads the proposed correction from the backend before applying it
+Three-button review UI: Accept & apply / Copy corrected text / Reject
+Accept: re-focuses original window, pastes corrected text, leaves corrected text in clipboard
+Copy only: leaves corrected text in clipboard; no paste; no re-focus (safe fallback)
+Reject / Cancel: restores previous clipboard; nothing pasted
+Safe refocus: falls back to copy-only if the original window can no longer be activated
+review_status column on correction_events (idempotent migration; V1/V2 data preserved)
+V2 history and detail UI shows review_status badge (read-only)
+Popup reuses V2 diff + correction-items markup and CSS (no extra frontend code)
+TrueNAS-compatible: all new OS interaction is client-side; backend additions are pure HTTP/SQLite
+
+Not included (deferred to V3):
+
+Per-correction accept/reject
+Personalization / preference learning
+ML, clustering, or analytics
 V3
 
 Learning and ML insights.

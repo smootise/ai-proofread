@@ -1,0 +1,128 @@
+{% extends "popup_base.html" %}
+{% block title %}Review correction — Proofreader{% endblock %}
+
+{% block content %}
+<div class="review-header">
+  <h1 class="review-title">Review correction</h1>
+  <div class="review-meta">
+    <span class="review-meta-item"><strong>App:</strong> {{ event.source_app or "—" }}</span>
+    {% if event.window_title %}
+    <span class="review-meta-item"><strong>Window:</strong> {{ event.window_title }}</span>
+    {% endif %}
+  </div>
+</div>
+
+{# ---- Diff section ---- #}
+<section class="review-section">
+  <h2>Proposed correction</h2>
+  {% if event.diff_html %}
+  <div class="diff-block">{{ event.diff_html }}</div>
+  {% else %}
+  <p class="text-muted">Full text not stored for this event.</p>
+  {% endif %}
+
+  {% if event.changed is not none and not event.changed %}
+  <div class="alert alert-info review-no-change">
+    No spelling or grammar errors found — text was already correct.
+    You can still accept to paste the unchanged text, or reject to cancel.
+  </div>
+  {% endif %}
+</section>
+
+{# ---- Correction fragments ---- #}
+{% if event.fragments %}
+<section class="review-section review-fragments-section">
+  <h2>Correction details ({{ event.fragments | length }})</h2>
+  <table class="items-table">
+    <thead>
+      <tr>
+        <th>Original</th>
+        <th>Corrected</th>
+        <th>Category</th>
+        <th>Explanation</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for item in event.fragments %}
+      <tr>
+        <td><del class="item-del">{{ item.original_text }}</del></td>
+        <td><ins class="item-ins">{{ item.corrected_text }}</ins></td>
+        <td>
+          {% if item.category %}
+            <span class="badge badge-category">{{ item.category }}</span>
+          {% else %}—{% endif %}
+        </td>
+        <td>{{ item.explanation or "—" }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</section>
+{% endif %}
+
+{# ---- Action buttons ---- #}
+<div class="review-actions">
+  <button class="btn btn-primary review-btn" onclick="reviewDecide('accept')">
+    ✓ Accept &amp; apply
+  </button>
+  <button class="btn btn-secondary review-btn" onclick="reviewDecide('copy')">
+    ⎘ Copy corrected text
+  </button>
+  <button class="btn btn-danger review-btn" onclick="reviewDecide('reject')">
+    ✕ Reject
+  </button>
+</div>
+{% endblock %}
+
+{% block extra_scripts %}
+<script>
+  /**
+   * Send the user's review decision to:
+   *   1. The backend (POST /ui/review/{id}/decision) — records review_status.
+   *   2. The pywebview JS API (window.pywebview.api.decide) — writes the decision
+   *      temp file and closes the window.
+   *
+   * If pywebview is not present (e.g. browser debug session), step 2 is skipped
+   * and a fallback message is shown instead.
+   */
+  async function reviewDecide(decision) {
+    const eventId = {{ event.id | int }};
+    const correctedText = {{ event.corrected_text | tojson }};
+
+    // Disable all buttons immediately to prevent double-clicks.
+    document.querySelectorAll('.review-btn').forEach(btn => {
+      btn.disabled = true;
+    });
+
+    // Step 1: Notify the backend so the review_status is persisted.
+    try {
+      await fetch(`/ui/review/${eventId}/decision`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ decision: decision }),
+      });
+    } catch (err) {
+      // Non-fatal: the window still closes; the backend will log a warning.
+      console.warn('Failed to record decision on backend:', err);
+    }
+
+    // Step 2: Signal the Python review client via the pywebview bridge.
+    if (window.pywebview && window.pywebview.api) {
+      // Pass corrected_text so the client can write it to the decision temp file
+      // without making an additional HTTP round-trip.
+      window.pywebview.api.decide(decision, correctedText);
+    } else {
+      // Debug / browser fallback — not a pywebview session.
+      const msg = document.createElement('div');
+      msg.className = 'alert alert-info';
+      msg.textContent = `[Debug] Decision: ${decision}. (pywebview not present — window not closed.)`;
+      document.querySelector('.review-actions').after(msg);
+    }
+  }
+
+  // Allow Escape key to reject/cancel.
+  document.addEventListener('keydown', function(e) {
+    if (e.key === 'Escape') { reviewDecide('cancel'); }
+  });
+</script>
+{% endblock %}

@@ -18,7 +18,6 @@ Covers:
 import sqlite3
 from pathlib import Path
 
-import pytest
 
 from server.database import (
     CorrectionEventRow,
@@ -33,7 +32,6 @@ from server.database import (
     insert_items,
     list_events,
 )
-
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -85,9 +83,7 @@ def test_init_db_indexes_are_idempotent(tmp_path: Path) -> None:
     with _conn(db) as conn:
         indexes = {
             r[0]
-            for r in conn.execute(
-                "SELECT name FROM sqlite_master WHERE type='index'"
-            ).fetchall()
+            for r in conn.execute("SELECT name FROM sqlite_master WHERE type='index'").fetchall()
         }
     assert "idx_events_created_at" in indexes
     assert "idx_events_source_app" in indexes

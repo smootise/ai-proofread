@@ -108,6 +108,8 @@ def proofread(request: ProofreadRequest) -> ProofreadResponse:
                 logger.warning("Skipping malformed correction item: %r — %s", c, exc)
 
     # -- Persist to SQLite --
+    # Use review_pending for review-path requests; auto_applied for the fast path.
+    initial_review_status = "review_pending" if request.review else "auto_applied"
     event_row = CorrectionEventRow(
         source_app=request.source_app,
         window_title=request.window_title,
@@ -120,6 +122,7 @@ def proofread(request: ProofreadRequest) -> ProofreadResponse:
         confidence=confidence,
         latency_ms=latency_ms,
         error=error_message,
+        review_status=initial_review_status,
     )
     try:
         event_id = insert_event(db_path, event_row)
@@ -156,4 +159,5 @@ def proofread(request: ProofreadRequest) -> ProofreadResponse:
         confidence=confidence or 1.0,
         corrections=corrections,
         warnings=[],
+        event_id=event_id if event_id > 0 else None,
     )

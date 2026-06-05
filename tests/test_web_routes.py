@@ -15,7 +15,6 @@ V1 regression:
 All tests use a temporary SQLite database (monkeypatched settings.db_path).
 """
 
-import json
 from pathlib import Path
 from unittest.mock import patch
 
@@ -30,7 +29,6 @@ from server.database import (
     insert_items,
 )
 from server.main import app
-
 
 # ---------------------------------------------------------------------------
 # Fixtures
@@ -214,7 +212,11 @@ def test_event_detail_shows_fragments(client, db) -> None:
     insert_items(
         db,
         eid,
-        [CorrectionItemRow(original_text="teh", corrected_text="the", category="spelling", explanation="Typo.")],
+        [
+            CorrectionItemRow(
+                original_text="teh", corrected_text="the", category="spelling", explanation="Typo."
+            )
+        ],
     )
     resp = client.get(f"/ui/history/{eid}")
     assert resp.status_code == 200
@@ -281,6 +283,7 @@ def test_delete_execute_removes_event(client, db) -> None:
 
     # Verify the event is gone.
     from server.database import get_event, get_items_for_event
+
     assert get_event(db, eid) is None
     assert get_items_for_event(db, eid) == []
 
@@ -298,4 +301,5 @@ def test_delete_execute_does_not_remove_other_events(client, db) -> None:
     client.post(f"/ui/history/{eid1}/delete", follow_redirects=False)
 
     from server.database import get_event
+
     assert get_event(db, eid2) is not None

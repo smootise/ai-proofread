@@ -35,6 +35,27 @@
           {% endif %}
         </td>
       </tr>
+      <tr>
+        <th>Review status</th>
+        <td>
+          {% set rs = event.review_status or "auto_applied" %}
+          {% if rs == "auto_applied" %}
+            <span class="badge badge-review-auto">auto_applied</span>
+          {% elif rs == "review_pending" %}
+            <span class="badge badge-review-pending">review_pending</span>
+          {% elif rs == "review_accepted_applied" %}
+            <span class="badge badge-review-accepted">review_accepted_applied</span>
+          {% elif rs == "review_copied_to_clipboard" %}
+            <span class="badge badge-review-copied">review_copied_to_clipboard</span>
+          {% elif rs == "review_rejected" %}
+            <span class="badge badge-review-rejected">review_rejected</span>
+          {% elif rs == "review_canceled" %}
+            <span class="badge badge-review-canceled">review_canceled</span>
+          {% else %}
+            <span class="badge badge-neutral">{{ rs }}</span>
+          {% endif %}
+        </td>
+      </tr>
       <tr><th>Confidence</th><td>
         {% if event.confidence is not none %}{{ "%.0f"|format(event.confidence * 100) }}%{% else %}—{% endif %}
       </td></tr>

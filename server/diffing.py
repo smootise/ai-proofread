@@ -72,11 +72,11 @@ def build_diff(original: Optional[str], corrected: Optional[str]) -> Markup:
             html_parts.append("<br>")
         elif tag == "delete":
             for line in original_lines[i1:i2]:
-                html_parts.append(f'<del>{escape(line)}</del>')
+                html_parts.append(f"<del>{escape(line)}</del>")
                 html_parts.append("<br>")
         elif tag == "insert":
             for line in corrected_lines[j1:j2]:
-                html_parts.append(f'<ins>{escape(line)}</ins>')
+                html_parts.append(f"<ins>{escape(line)}</ins>")
                 html_parts.append("<br>")
 
     # Remove trailing <br> if present.

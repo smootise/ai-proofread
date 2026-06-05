@@ -1,5 +1,5 @@
 """
-V2 web UI routes for browsing correction history.
+V2/V2.5 web UI routes for browsing correction history and the review popup.
 
 All routes are mounted under the /ui prefix (see main.py).
 
@@ -10,6 +10,9 @@ Routes:
     GET  /ui/history/{event_id}/delete    — Delete confirmation page.
     POST /ui/history/{event_id}/delete    — Perform single-event cascade delete.
 
+    GET  /ui/review/{event_id}            — V2.5 review popup page (pywebview window).
+    POST /ui/review/{event_id}/decision   — V2.5 record the user's review decision.
+
 V1 endpoints (GET /health, POST /proofread) are untouched.
 """
 
@@ -17,10 +20,17 @@ import logging
 from typing import Optional
 
 from fastapi import APIRouter, Request
-from fastapi.responses import HTMLResponse, RedirectResponse
+from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
 
-from server.history_service import get_dashboard_stats, get_event_detail, list_history, remove_event
+from server.history_service import (
+    get_dashboard_stats,
+    get_event_detail,
+    list_history,
+    remove_event,
+    set_review_status,
+)
+from server.models import ReviewDecisionRequest, ReviewStatus
 
 logger = logging.getLogger(__name__)
 
@@ -146,3 +156,80 @@ async def delete_execute(event_id: int) -> RedirectResponse:
         logger.warning("Delete requested for unknown event %d", event_id)
         redirect_url = "/ui/history"
     return RedirectResponse(url=redirect_url, status_code=303)
+
+
+# ---------------------------------------------------------------------------
+# Review popup — V2.5
+# ---------------------------------------------------------------------------
+
+# Mapping from the decision string sent by the popup JS to the ReviewStatus enum value.
+_DECISION_TO_STATUS: dict[str, str] = {
+    "accept": ReviewStatus.review_accepted_applied.value,
+    "copy": ReviewStatus.review_copied_to_clipboard.value,
+    "reject": ReviewStatus.review_rejected.value,
+    "cancel": ReviewStatus.review_canceled.value,
+}
+
+
+@router.get("/review/{event_id}", response_class=HTMLResponse)
+async def review_popup(request: Request, event_id: int) -> HTMLResponse:
+    """
+    Render the review popup page for the given correction event.
+
+    Called by the pywebview window opened by review_client.py.
+    Reuses get_event_detail (diff + correction items) from the history service.
+    Returns 404 if the event is not found.
+    """
+    detail = get_event_detail(event_id)
+    if detail is None:
+        return _t().TemplateResponse(
+            request=request,
+            name="review_not_found.html",
+            context={"event_id": event_id},
+            status_code=404,
+        )
+    return _t().TemplateResponse(
+        request=request,
+        name="review.html",
+        context={"event": detail},
+    )
+
+
+@router.post("/review/{event_id}/decision")
+async def review_decision(event_id: int, body: ReviewDecisionRequest) -> JSONResponse:
+    """
+    Record the user's review decision for the given correction event.
+
+    Called by the pywebview JS API bridge (via an XHR/fetch from the popup page)
+    before the popup window closes.
+
+    Returns {"ok": true} on success, {"ok": false, "error": "..."} if the event
+    is not found or the update fails.
+    """
+    status_value = _DECISION_TO_STATUS.get(body.decision)
+    if status_value is None:
+        # Should not happen given Pydantic's Literal validation.
+        return JSONResponse(
+            {"ok": False, "error": f"Unknown decision: {body.decision!r}"},
+            status_code=400,
+        )
+
+    updated = set_review_status(event_id, status_value)
+    if not updated:
+        logger.warning(
+            "Review decision %r for unknown event %d — status not recorded",
+            body.decision,
+            event_id,
+        )
+        return JSONResponse(
+            {"ok": False, "error": f"Event {event_id} not found."},
+            status_code=404,
+        )
+
+    logger.info(
+        "Review decision %r recorded for event %d → review_status=%r",
+        body.decision,
+        event_id,
+        status_value,
+    )
+    return JSONResponse({"ok": True})

@@ -51,6 +51,7 @@
       <th>App</th>
       <th>Language</th>
       <th>Status</th>
+      <th>Review</th>
       <th>Mode</th>
       <th>Preview</th>
       <th>Items</th>
@@ -77,6 +78,24 @@
           <span class="badge badge-changed">changed</span>
         {% else %}
           <span class="badge badge-unchanged">unchanged</span>
+        {% endif %}
+      </td>
+      <td>
+        {% set rs = event.review_status or "auto_applied" %}
+        {% if rs == "auto_applied" %}
+          <span class="badge badge-review-auto">auto</span>
+        {% elif rs == "review_pending" %}
+          <span class="badge badge-review-pending">pending</span>
+        {% elif rs == "review_accepted_applied" %}
+          <span class="badge badge-review-accepted">accepted</span>
+        {% elif rs == "review_copied_to_clipboard" %}
+          <span class="badge badge-review-copied">copied</span>
+        {% elif rs == "review_rejected" %}
+          <span class="badge badge-review-rejected">rejected</span>
+        {% elif rs == "review_canceled" %}
+          <span class="badge badge-review-canceled">canceled</span>
+        {% else %}
+          <span class="badge badge-neutral">{{ rs }}</span>
         {% endif %}
       </td>
       <td>{{ event.mode or "—" }}</td>

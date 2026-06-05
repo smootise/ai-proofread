@@ -1,0 +1,35 @@
+{% extends "popup_base.html" %}
+{% block title %}Review not found — Proofreader{% endblock %}
+
+{% block content %}
+<div class="review-header">
+  <h1 class="review-title">Review correction</h1>
+</div>
+
+<div class="alert alert-error">
+  Correction event #{{ event_id }} was not found.
+  The backend may have been restarted, or the event was deleted.
+</div>
+
+<div class="review-actions">
+  <button class="btn btn-secondary review-btn" onclick="reviewClose()">
+    Close
+  </button>
+</div>
+{% endblock %}
+
+{% block extra_scripts %}
+<script>
+  function reviewClose() {
+    if (window.pywebview && window.pywebview.api) {
+      window.pywebview.api.decide('cancel', '');
+    } else {
+      window.close();
+    }
+  }
+
+  document.addEventListener('keydown', function(e) {
+    if (e.key === 'Escape') { reviewClose(); }
+  });
+</script>
+{% endblock %}

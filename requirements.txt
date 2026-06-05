@@ -8,6 +8,10 @@ python-dotenv>=1.0.0
 requests>=2.32.0
 # V2 web UI — Jinja2 templating (markupsafe ships with jinja2)
 jinja2>=3.1.0
+# V2.5 review popup — pywebview wraps the system WebView2 (Edge) runtime.
+# Requires the WebView2 Runtime on Windows:
+#   https://developer.microsoft.com/en-us/microsoft-edge/webview2/
+pywebview>=5.1
 
 # Testing
 pytest>=8.0.0

@@ -39,7 +39,8 @@ CREATE TABLE IF NOT EXISTS correction_events (
     confidence      REAL,
     model_name      TEXT    NOT NULL,
     latency_ms      INTEGER,
-    error           TEXT
+    error           TEXT,
+    review_status   TEXT    NOT NULL DEFAULT 'auto_applied'
 );
 """
 
@@ -73,9 +74,10 @@ def _get_connection(db_path: Path) -> sqlite3.Connection:
 
 _CREATE_INDEXES = [
     # correction_events indexes — support list ordering and filtering
-    "CREATE INDEX IF NOT EXISTS idx_events_created_at ON correction_events(created_at)",
-    "CREATE INDEX IF NOT EXISTS idx_events_source_app ON correction_events(source_app)",
-    "CREATE INDEX IF NOT EXISTS idx_events_language   ON correction_events(language)",
+    "CREATE INDEX IF NOT EXISTS idx_events_created_at    ON correction_events(created_at)",
+    "CREATE INDEX IF NOT EXISTS idx_events_source_app    ON correction_events(source_app)",
+    "CREATE INDEX IF NOT EXISTS idx_events_language      ON correction_events(language)",
+    "CREATE INDEX IF NOT EXISTS idx_events_review_status ON correction_events(review_status)",
     # correction_items indexes — support joins, cascade-delete queries, and category filtering
     "CREATE INDEX IF NOT EXISTS idx_items_event_id  ON correction_items(event_id)",
     "CREATE INDEX IF NOT EXISTS idx_items_category  ON correction_items(category)",
@@ -83,13 +85,34 @@ _CREATE_INDEXES = [
 
 
 def init_db(db_path: Path) -> None:
-    """Create tables and indexes if they do not already exist. Safe to call on every startup."""
+    """
+    Create tables and indexes if they do not already exist. Safe to call on every startup.
+
+    Also applies idempotent schema migrations for columns added after the initial schema.
+    Existing rows are unaffected — SQLite column defaults fill in any missing values.
+    """
     logger.info("Initialising database at %s", db_path)
     with _get_connection(db_path) as conn:
         conn.execute(_CREATE_CORRECTION_EVENTS)
         conn.execute(_CREATE_CORRECTION_ITEMS)
+
+        # V2.5 migration: add review_status column if it does not yet exist.
+        # Run BEFORE the index creation so that idx_events_review_status can be
+        # created even when upgrading from the V1/V2 schema that lacks the column.
+        # Existing rows receive the DEFAULT value ('auto_applied') automatically.
+        existing_cols = {
+            row["name"] for row in conn.execute("PRAGMA table_info(correction_events)")
+        }
+        if "review_status" not in existing_cols:
+            logger.info("Migrating: adding review_status column to correction_events")
+            conn.execute(
+                "ALTER TABLE correction_events "
+                "ADD COLUMN review_status TEXT NOT NULL DEFAULT 'auto_applied'"
+            )
+
         for idx_sql in _CREATE_INDEXES:
             conn.execute(idx_sql)
+
         conn.commit()
     logger.info("Database ready.")
 
@@ -112,6 +135,7 @@ class CorrectionEventRow:
     confidence: Optional[float] = None
     latency_ms: Optional[int] = None
     error: Optional[str] = None
+    review_status: str = "auto_applied"
 
 
 @dataclass
@@ -141,11 +165,11 @@ def insert_event(db_path: Path, row: CorrectionEventRow) -> int:
         INSERT INTO correction_events (
             created_at, source_app, window_title, mode,
             original_text, corrected_text, language, changed,
-            confidence, model_name, latency_ms, error
+            confidence, model_name, latency_ms, error, review_status
         ) VALUES (
             :created_at, :source_app, :window_title, :mode,
             :original_text, :corrected_text, :language, :changed,
-            :confidence, :model_name, :latency_ms, :error
+            :confidence, :model_name, :latency_ms, :error, :review_status
         )
     """
     params = {
@@ -161,6 +185,7 @@ def insert_event(db_path: Path, row: CorrectionEventRow) -> int:
         "model_name": row.model_name,
         "latency_ms": row.latency_ms,
         "error": row.error,
+        "review_status": row.review_status,
     }
     with _get_connection(db_path) as conn:
         cursor = conn.execute(sql, params)
@@ -355,25 +380,21 @@ def get_stats(db_path: Path) -> dict:
         error_count = conn.execute(
             "SELECT COUNT(*) FROM correction_events WHERE error IS NOT NULL"
         ).fetchone()[0]
-        top_categories = conn.execute(
-            """
+        top_categories = conn.execute("""
             SELECT category, COUNT(*) AS cnt
               FROM correction_items
              WHERE category != ''
              GROUP BY category
              ORDER BY cnt DESC
              LIMIT 5
-            """
-        ).fetchall()
-        top_source_apps = conn.execute(
-            """
+            """).fetchall()
+        top_source_apps = conn.execute("""
             SELECT source_app, COUNT(*) AS cnt
               FROM correction_events
              GROUP BY source_app
              ORDER BY cnt DESC
              LIMIT 5
-            """
-        ).fetchall()
+            """).fetchall()
 
     return {
         "total": total,
@@ -408,3 +429,22 @@ def delete_event(db_path: Path, event_id: int) -> bool:
     else:
         logger.warning("delete_event: no correction_event found with id=%d", event_id)
     return deleted
+
+
+def update_review_status(db_path: Path, event_id: int, review_status: str) -> bool:
+    """
+    Update the review_status of a single correction_events row.
+
+    Returns True if the row was found and updated, False if no row matched.
+    """
+    sql = "UPDATE correction_events SET review_status = ? WHERE id = ?"
+    with _get_connection(db_path) as conn:
+        cursor = conn.execute(sql, (review_status, event_id))
+        conn.commit()
+        updated = cursor.rowcount > 0
+
+    if updated:
+        logger.info("Updated review_status=%r for event id=%d", review_status, event_id)
+    else:
+        logger.warning("update_review_status: no correction_event found with id=%d", event_id)
+    return updated
