@@ -159,6 +159,34 @@ def test_multiline_diff_contains_br() -> None:
     assert "teh" in raw or "the" in raw
 
 
+def test_utf8_bom_stripped_from_original() -> None:
+    # AHK FileRead prepends a UTF-8 BOM (﻿) to clipboard text from some apps.
+    # It must not appear as a spurious first-word replacement in the diff.
+    original = "﻿I have teh report."
+    corrected = "I have the report."
+    result = build_diff(original, corrected)
+    raw = str(result)
+    # The BOM character itself must not produce a replace opcode that shows 'I' -> 'I'.
+    # Specifically, there must be no <del>...I</del><ins>I</ins> pattern.
+    assert "﻿" not in raw  # BOM stripped, not rendered
+    assert "<del>I</del><ins>I</ins>" not in raw
+    # The real correction should still appear.
+    assert "teh" in raw
+    assert "the" in raw
+
+
+def test_utf8_bom_on_both_sides_not_spurious() -> None:
+    # If both sides have a BOM (shouldn't happen, but be safe), they both strip
+    # and the result is still a clean diff.
+    original = "﻿Hello wrold."
+    corrected = "﻿Hello world."
+    result = build_diff(original, corrected)
+    raw = str(result)
+    assert "﻿" not in raw
+    assert "wrold" in raw
+    assert "world" in raw
+
+
 def test_multiline_unchanged_lines_preserved() -> None:
     original = "unchanged line\ntypo here\nanother unchanged"
     corrected = "unchanged line\ntypo fixed\nanother unchanged"

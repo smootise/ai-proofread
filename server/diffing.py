@@ -40,6 +40,12 @@ def build_diff(original: Optional[str], corrected: Optional[str]) -> Markup:
     if original is None or corrected is None:
         return Markup('<span class="diff-unavailable">Full text not stored for this event.</span>')
 
+    # Strip UTF-8 BOM (﻿) that AutoHotkey's FileRead prepends when reading
+    # clipboard content written by Notepad or certain Windows apps. The BOM is
+    # not part of the user's text and must not appear as a spurious first-word diff.
+    original = original.lstrip("﻿")
+    corrected = corrected.lstrip("﻿")
+
     if original == corrected:
         return Markup('<span class="diff-unchanged">No changes — text was already correct.</span>')
 
