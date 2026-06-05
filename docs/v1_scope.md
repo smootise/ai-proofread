@@ -1,4 +1,4 @@
-V1 Scope
+V1 Scope ✅ Complete
 Goal
 
 Build a Windows proof-of-concept proofreader that can be triggered from most apps with a global hotkey.
@@ -39,8 +39,8 @@ V1 non-goals
 Do not implement:
 
 Review popup
-Web UI
-Correction history UI
+Web UI (delivered in V2)
+Correction history UI (delivered in V2)
 Per-correction accept/reject
 ML or clustering
 Preference learning
@@ -61,3 +61,17 @@ It restores the previous clipboard on failure.
 It leaves the original text in the clipboard after success.
 It logs correction events to SQLite.
 It fails safely when backend/Ollama/JSON parsing fails.
+V1 bugfixes (shipped after initial implementation)
+
+AHK exit code unreliability: RunWait exit code capture via cmd /c returns the cmd.exe PID
+instead of the child process exit code on some Windows versions. Fixed by detecting success
+via the presence of the output temp file instead.
+
+Client .env loading: proofread_client.py now resolves .env relative to the repo root
+(via the script's own path) rather than relying on the working directory, so it works
+correctly regardless of where it is invoked from.
+
+UTF-8 BOM in stored text: AutoHotkey's FileOpen writes files with a UTF-8 BOM on some
+Windows configurations. The BOM was stored verbatim in original_text and caused the V2
+diff view to show the first word as a spurious correction. Fixed by stripping the BOM
+in the diff renderer (existing stored data handled automatically, no migration needed).

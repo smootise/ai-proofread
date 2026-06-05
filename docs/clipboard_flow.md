@@ -45,22 +45,27 @@ Full success flow
    - restore previous clipboard
    - fail safely
 
-8. Send captured text to Python client/backend.
-9. Put corrected_text in clipboard.
-10. Paste corrected_text.
-11. Put original_text in clipboard.
+8. Write captured text to a UTF-8 temp file. Run Python client via cmd /c; wait for it to exit.
+9. Detect success by the presence of the output temp file (not the exit code — RunWait exit
+   code capture via cmd /c is unreliable on some Windows versions and returns the cmd.exe PID
+   instead of the child process exit code).
+10. If the output file exists and is non-empty: put corrected_text in clipboard, Ctrl+V, then
+    put original_text in clipboard as the recovery fallback.
+11. Clean up temp files.
 Failure flow
 
 On failure:
 
 Do not paste anything.
 Restore previous clipboard.
-Show/log a simple error.
+Show tray tip error message.
 Leave source app untouched.
 
 Failure cases include:
 
 No text captured
+Failed to write temp input file
+Output file absent or empty after client exits
 Text shorter than MIN_CHARS
 Text longer than MAX_CHARS
 Backend unreachable

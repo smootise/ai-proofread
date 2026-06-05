@@ -6,8 +6,10 @@ Protocol (temp-file based, robust to Unicode / multiline / special characters):
     Output: corrected_text written to --output-file (UTF-8) on success only
     Exit:   0 = success, 1 = any failure
 
-AutoHotkey checks the exit code.  On exit 0 it reads the output file and pastes
-its contents.  On non-zero exit it restores the previous clipboard -- no paste.
+AutoHotkey detects success by the presence of the output file (not the exit code —
+exit code capture via cmd /c is unreliable on some Windows versions). On success it
+reads the output file and pastes its contents. On failure (output file absent) it
+restores the previous clipboard.
 
 Usage (called by AutoHotkey):
     python client/proofread_client.py
