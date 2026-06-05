@@ -48,10 +48,16 @@ from dotenv import load_dotenv
 _repo_root = Path(__file__).resolve().parent.parent
 load_dotenv(_repo_root / ".env")
 
+# Log to both stderr and a persistent log file so failures are diagnosable
+# when the process is run hidden (no console) by AutoHotkey.
+_log_file = Path(os.environ.get("TEMP", ".")) / "proofreader_review.log"
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s %(levelname)-8s %(name)s - %(message)s",
-    stream=sys.stderr,
+    handlers=[
+        logging.StreamHandler(sys.stderr),
+        logging.FileHandler(str(_log_file), encoding="utf-8"),
+    ],
 )
 logger = logging.getLogger(__name__)
 
