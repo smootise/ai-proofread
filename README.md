@@ -319,6 +319,7 @@ ai-proofread/
   .env.example
   requirements.txt
   CLAUDE.md
+  LICENSE
 ```
 
 ---
@@ -332,3 +333,9 @@ ai-proofread/
 - Cloud model APIs
 
 See `docs/roadmap.md` for the V3 plan.
+
+---
+
+## License
+
+MIT — see [LICENSE](LICENSE).
